@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from .listing import Listing
 
 
 class Scraper(ABC):
@@ -8,7 +9,19 @@ class Scraper(ABC):
     """
 
     @abstractmethod
-    def scrape(self, product: str) -> list[str]:
+    def scrape(self, product_name: str) -> list[Listing]:
         """
         scrapes the specified vendor and returns a list of relavant results
         """
+
+
+class ScrapeException(Exception):
+    """
+    defines the standard exception for scrapers. children can raise this
+    exception when they encounter an error during scraping
+    """
+
+    def __init__(self, vendor: str, message: str) -> None:
+        super().__init__(f"Error scraping {vendor}: {message}")
+        self.vendor = vendor
+        self.message = message
