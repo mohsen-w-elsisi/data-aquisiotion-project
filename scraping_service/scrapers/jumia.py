@@ -1,3 +1,4 @@
+from threading import Thread
 from re import compile as compileRe
 from typing import Optional
 from requests import get as http_get
@@ -9,10 +10,25 @@ from .listing import Listing
 
 
 class JumiaScraper(Scraper):
+    def __init__(self) -> None:
+        self._urls: list[str]
+        self._listings: list[Listing] = []
+
     def scrape(self, product_name: str) -> list[Listing]:
-        listing_urls = _JumiaSearcher().get_listing_urls(product_name)
-        listings = [_UrlToListingConverter().convert(url) for url in listing_urls[:5]]
-        return listings
+        self._urls = _JumiaSearcher().get_listing_urls(product_name)
+        self._extract_info_from_urls()
+        return self._listings
+
+    def _extract_info_from_urls(self):
+        threads = [Thread(target=self._scrape_url, args=(url,)) for url in self._urls]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+    def _scrape_url(self, url: str):
+        listing = _UrlToListingConverter().convert(url)
+        self._listings.append(listing)
 
 
 class _JumiaSearcher:
@@ -51,7 +67,7 @@ class _JumiaSearcher:
 
 class _UrlToListingConverter:
     _REQUEST_TIMEOUT = 5
-    
+
     def __init__(self):
         self._url: str
         self._page: BeautifulSoup
@@ -131,6 +147,8 @@ class _listingPageDataExtractor:
         except IndexError:
             return 0 if "No ratings available" in self._page.text else None
         review_num_str = (
-            self._review_count_regex.search(reviews_anchor.text).group().replace(",", "")
+            self._review_count_regex.search(reviews_anchor.text)
+            .group()
+            .replace(",", "")
         )
         return int(review_num_str)
