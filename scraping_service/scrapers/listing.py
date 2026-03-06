@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from enum import Enum
+from typing import Optional
 
 
 class PriceType(Enum):
@@ -7,7 +8,7 @@ class PriceType(Enum):
     RANGE = "range"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Listing:
     """
     Represents a single listing of a product on a vendor's website,
@@ -19,14 +20,14 @@ class Listing:
     image: str
 
     price_type: PriceType
-    price: float
-    price_range: tuple[float, float]
+    price: Optional[float]
+    price_range: Optional[tuple[float, float]]
 
     vendor: str
-    subvendor: str
+    subvendor: Optional[str]
 
-    rating: float
-    review_count: int
+    rating: Optional[float]
+    review_count: Optional[int]
 
     def __post_init__(self):
         _PriceValidator(self.price_type, self.price, self.price_range).validate()
@@ -36,10 +37,25 @@ class Listing:
                     f"Invalid rating {self.rating}. Rating must be between 0 and 5"
                 )
 
+    def to_json(self) -> str:
+        data = asdict(self)
+        data["price_type"] = data["price_type"].value
+        return data
+
+    @classmethod
+    def from_json(cls, data: dict) -> "Listing":
+        data["price_type"] = PriceType(data["price_type"])
+        if data["price_range"] is not None:
+            data["price_range"] = tuple(data["price_range"])
+        return cls(**data)
+
 
 class _PriceValidator:
     def __init__(
-        self, price_type: PriceType, price: float, price_range: tuple[float, float]
+        self,
+        price_type: PriceType,
+        price: Optional[float],
+        price_range: Optional[tuple[float, float]],
     ) -> None:
         self.price_type = price_type
         self.price = price
