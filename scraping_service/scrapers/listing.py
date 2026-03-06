@@ -25,8 +25,8 @@ class Listing:
     vendor: str
     subvendor: str
 
-    rating: float 
-    review_count: int 
+    rating: float
+    review_count: int
 
     def __post_init__(self):
         _PriceValidator(self.price_type, self.price, self.price_range).validate()
