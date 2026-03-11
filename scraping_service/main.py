@@ -1,5 +1,6 @@
 from flask import Flask, request
 from composite_scraper import CompositeScraper
+import cache
 
 server = Flask(__name__)
 
@@ -15,9 +16,18 @@ def search():
         product_name = request.args["product_name"]
     except KeyError:
         return "Must include product_name parameter", 400
-    listings = CompositeScraper().scrape(product_name)
-    listings_json = [listing.to_json() for listing in listings]
-    return listings_json, 200
+    return _search(product_name), 200
+
+
+def _search(product_name: str) -> dict:
+    cached_search_results = cache.get_cached(product_name)
+    if cached_search_results is not None:
+        return cached_search_results
+    else:
+        listings = CompositeScraper().scrape(product_name)
+        listings_json = [listing.to_json() for listing in listings]
+        cache.set_cached(product_name, listings_json)
+        return listings_json
 
 
 if __name__ == "__main__":
