@@ -36,7 +36,7 @@ class _JumiaSearcher:
     _LISTING_CARD_SELECTOR = "[data-catalog=true] article"
     _LISTING_LINK_SELECTOR = "a.core"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._product_name: str = None
         self._page: BeautifulSoup = None
         self._listing_links: list[str] = None
@@ -66,7 +66,7 @@ class _JumiaSearcher:
 
 
 class _UrlToListingConverter:
-    _REQUEST_TIMEOUT = 5
+    _REQUEST_TIMEOUT = 2
 
     def __init__(self):
         self._url: str

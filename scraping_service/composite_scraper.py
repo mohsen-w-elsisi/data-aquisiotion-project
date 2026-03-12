@@ -1,6 +1,6 @@
 from typing import Callable
 from threading import Thread
-from scrapers import Listing, Scraper, EbayScraper, JumiaScraper
+from scrapers import Listing, Scraper, EbayScraper, JumiaScraper, NoonScraper
 from constants import SERB_API_KEY
 
 
@@ -8,6 +8,7 @@ class CompositeScraper:
     _scraper_initers: list[Callable[[], Scraper]] = [
         lambda: EbayScraper(SERB_API_KEY),
         JumiaScraper,
+        NoonScraper
     ]
 
     def __init__(self) -> None:

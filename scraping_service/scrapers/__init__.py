@@ -7,6 +7,7 @@ from .listing import Listing
 
 from .ebay import EbayScraper
 from .jumia import JumiaScraper
+from .noon import NoonScraper
 
 
-__all__ = ["EbayScraper", "JumiaScraper", "Scraper", "Listing"]
+__all__ = ["EbayScraper", "JumiaScraper", "NoonScraper", "Scraper", "Listing"]
