@@ -76,13 +76,10 @@ T = TypeVar("T")
 def _skip_if_element_not_found(func: Callable[[Any], T]):
     def wrapper(self: Any) -> T:
         try:
-            print("trying", func)
             return func(self)
         except StaleElementReferenceException:
-            print("found stale element")
             return None
         except NoSuchElementException:
-            print("missing element")
             return None
 
     return wrapper

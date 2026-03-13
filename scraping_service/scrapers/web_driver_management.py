@@ -1,6 +1,7 @@
 from copy import copy
 from threading import Thread
-from typing import Callable, TypeVar
+from time import sleep
+from typing import Callable, TypeVar, TypeAlias, Optional
 
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -18,20 +19,58 @@ class WebDriverTask[_T]:
         return self._func(driver)
 
 
-class _WebDriverWorker[_T]:
-    def __init__(self, driver: WebDriver, next_task: Callable[[], WebDriverTask[_T]]):
-        self._driver = driver
-        self._nextTask = next_task
+NextTask: TypeAlias = Callable[[], Optional[WebDriverTask[_T]]]
 
-    def start(self) -> list[_T]:
-        results: list[_T] = []
+
+class _WebDriverWorker[_T]:
+    def __init__(self, driver: WebDriver, next_task: NextTask[_T], push: Callable[[_T], None]):
+        self._driver = driver
+        self._next_task = next_task
+        self._push = push
+
+    def start(self):
         while True:
-            task = self._nextTask()
+            task = self._next_task()
             if task is None:
                 break
             result = task.execute(self._driver)
-            results.append(result)
-        return results
+            self._push(result)
+
+
+class _WebDriverThreadController[_T]:
+    _TIME_INCREMENT_MS = 100
+
+    def __init__(self, driver: WebDriver, next_task: NextTask[_T], push: Callable[[_T], None], timeout: int):
+        self._driver = driver
+        self._next_task = next_task
+        self._push = push
+        self._timeout_ms = timeout * 1000
+        self._supervisor_thread = Thread(target=self._supervise)
+        self._worker_thread: Thread = Thread(target=self._work)
+        self._lifetime_ms = 0
+        self._should_terminate = False
+
+    def start(self):
+        self._supervisor_thread.start()
+        self._worker_thread.start()
+        while not self._should_terminate:
+            pass
+
+    def _work(self):
+        supervised_next_task = lambda: self._next_task() if not self._should_terminate else None
+        _WebDriverWorker(
+            self._driver,
+            supervised_next_task,
+            self._push
+        ).start()
+
+    def _supervise(self):
+        while not self._should_terminate:
+            sleep(self._TIME_INCREMENT_MS * 0.001)
+            self._lifetime_ms += self._TIME_INCREMENT_MS
+            if self._lifetime_ms >= self._timeout_ms:
+                self._should_terminate = True
+                print("should terminate now")
 
 
 class WebDriverOrchestrater[_T]:
@@ -40,38 +79,27 @@ class WebDriverOrchestrater[_T]:
     def __init__(self, tasks: list[WebDriverTask[_T]]):
         self._drivers: list[WebDriver] = []
         self._was_dismissed = False
-        self._tasks = copy(tasks)
         self._results: list[_T] = []
+        self._tasks = copy(tasks)
         self._init_drivers()
 
     def _init_drivers(self):
         for _ in range(self._WEB_DRIVER_COUNT):
-            new_driver = self._new_driver()
+            new_driver = webdriver.Chrome()
             self._drivers.append(new_driver)
 
-    @staticmethod
-    def _new_driver():
-        return webdriver.Chrome()
-
     def start(self) -> list[_T]:
-        workers = [
-            _WebDriverWorker(driver, self._next_task)
+        thread_controllers = [
+            _WebDriverThreadController(driver, self._next_task, self._results.append, 15)
             for driver in self._drivers]
         threads = [
-            Thread(target=self._thread_routine(worker))
-            for worker in workers]
+            Thread(target=controller.start)
+            for controller in thread_controllers]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
         return self._results
-
-    def _thread_routine(self, worker: _WebDriverWorker[_T]):
-        def routine():
-            results = worker.start()
-            self._results.extend(results)
-
-        return routine
 
     def _next_task(self):
         try:
