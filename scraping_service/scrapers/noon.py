@@ -1,5 +1,6 @@
 from time import sleep
 from typing import Optional, Callable, TypeVar, Any
+from re import search
 
 from selenium import webdriver
 from selenium.common import StaleElementReferenceException, NoSuchElementException
@@ -10,10 +11,11 @@ from selenium.webdriver.remote.webelement import WebElement
 
 from .listing import Listing, PriceType
 from .scraper import Scraper
+from .web_driver_management import WebDriverTask, WebDriverOrchestrater
 
 
 class NoonScraper(Scraper):
-    def __init__(self):
+    def __init__(self) -> None:
         self._product_name = ""
         self._listing_urls: list[str] = []
         self._listings: list[Listing] = []
@@ -26,19 +28,20 @@ class NoonScraper(Scraper):
 
     def _get_listing_urls(self):
         driver = webdriver.Chrome()
-        self._listing_urls = _NoonSearcher(driver).get_listing_urls(self._product_name)
+        self._listing_urls = _NoonSearcher(driver) \
+            .get_listing_urls(self._product_name)[:15]
         driver.close()
 
     def _scrape_urls(self):
-        driver = webdriver.Chrome()
-        for url in self._listing_urls:
-            listing = _ListingLinkScraper(driver, url).scrape()
-            self._listings.append(listing)
+        tasks = [
+            WebDriverTask(url, lambda drv: _ListingLinkScraper(drv).scrape())
+            for url in self._listing_urls]
+        self._listings = WebDriverOrchestrater(tasks).start()
 
 
 class _NoonSearcher:
     _BASE_URL = "https://www.noon.com/egypt-en"
-    _PRODUCT_ANCHOR_SELECTOR = "[data-qa=\"plp-product-box\"] a"
+    _PRODUCT_ANCHOR_SELECTOR = '[data-qa="plp-product-box"] a'
 
     def __init__(self, driver: WebDriver):
         self._product_name: str = ""
@@ -59,36 +62,12 @@ class _NoonSearcher:
         search_input.send_keys(Keys.RETURN)
 
     def _scrape_listing_urls(self):
-        product_anchors = self._driver.find_elements(By.CSS_SELECTOR, self._PRODUCT_ANCHOR_SELECTOR)
-        self._listing_urls = [anchor.get_attribute("href") for anchor in product_anchors]
-
-
-class _ListingLinkScraper:
-    def __init__(self, driver: WebDriver, url: str):
-        self.listing = None
-        self._url = url
-        self._driver = driver
-
-    def scrape(self) -> Listing:
-        self._driver.get(self._url)
-        sleep(0.5)
-        self._construct_listing()
-        return self._listing
-
-    def _construct_listing(self):
-        data_extractor = _ListingPageDataExtractor(self._driver)
-        self._listing = Listing(
-            name=data_extractor.title,
-            image=data_extractor.image,
-            url=self._url,
-            price_type=PriceType.DISCRETE,
-            price=data_extractor.price,
-            price_range=None,
-            vendor="Noon",
-            subvendor=data_extractor.subvendor,
-            rating=data_extractor.rating,
-            review_count=data_extractor.review_count
+        product_anchors = self._driver.find_elements(
+            By.CSS_SELECTOR, self._PRODUCT_ANCHOR_SELECTOR
         )
+        self._listing_urls = [
+            anchor.get_attribute("href") for anchor in product_anchors
+        ]
 
 
 T = TypeVar("T")
@@ -109,9 +88,28 @@ def _skip_if_element_not_found(func: Callable[[Any], T]):
     return wrapper
 
 
-class _ListingPageDataExtractor:
+class _ListingLinkScraper:
     def __init__(self, driver: WebDriver):
+        self._listing: Listing
         self._driver = driver
+
+    def scrape(self) -> Listing:
+        self._construct_listing()
+        return self._listing
+
+    def _construct_listing(self):
+        self._listing = Listing(
+            name=self.title,
+            image=self.image,
+            url=self._driver.current_url,
+            price_type=PriceType.DISCRETE,
+            price=self.price,
+            price_range=None,
+            vendor="Noon",
+            subvendor=self.subvendor,
+            rating=self.rating,
+            review_count=self.review_count,
+        )
 
     @property
     @_skip_if_element_not_found
@@ -140,7 +138,8 @@ class _ListingPageDataExtractor:
     @_skip_if_element_not_found
     def review_count(self):
         review_count_element = self._driver.find_element(
-            By.CLASS_NAME, "NoonRatingsBasedOnTitle-module-scss-module__aAM0SW__basedOnInfoCtrLoader"
+            By.CLASS_NAME,
+            "NoonRatingsBasedOnTitle-module-scss-module__aAM0SW__basedOnInfoCtrLoader",
         )
         review_count_text = search(r"[\d,]+", review_count_element.text)
         review_count_text = review_count_text.group(0).replace(",", "").strip()
