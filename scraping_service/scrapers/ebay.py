@@ -8,33 +8,34 @@ class EbayScraper(Scraper):
         super().__init__()
         self.client = Client(api_key=api_key)
 
-        self.product_name: str = None
-        self.api_response: dict = None
-        self.parsed_results: list[Listing] = None
+        self._product_name: str = None
+        self._api_response: dict = None
+        self._parsed_results: list[Listing] = None
 
-    def scrape(self, product_name: str) -> list[Listing]:
-        self.product_name = product_name
+    def scrape(self, product_name: str):
+        self._product_name = product_name
         self._search_using_api()
         self._parse_api_response()
-        return self.parsed_results
+        for listing in self._parsed_results:
+            self._listings.push(listing)
 
     def _search_using_api(self):
-        self.api_response = self.client.search(
+        self._api_response = self.client.search(
             {
                 "engine": "ebay",
-                "_nkw": self.product_name,
+                "_nkw": self._product_name,
             }
         )
 
     def _parse_api_response(self):
-        listings: list[dict] = self.api_response.get("organic_results", [])
+        listings: list[dict] = self._api_response.get("organic_results", [])
         parsed_results = []
         for listing in listings:
             try:
                 parsed_results.append(_ListingParser(listing).parse())
             except _ListingParserException:
                 continue
-        self.parsed_results = parsed_results
+        self._parsed_results = parsed_results
 
 
 class _ListingParser:

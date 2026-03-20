@@ -11,13 +11,12 @@ from .listing import Listing
 
 class JumiaScraper(Scraper):
     def __init__(self) -> None:
-        self._urls: list[str]
-        self._listings: list[Listing] = []
+        super().__init__()
+        self._urls: list[str] = []
 
-    def scrape(self, product_name: str) -> list[Listing]:
+    def scrape(self, product_name: str):
         self._urls = _JumiaSearcher().get_listing_urls(product_name)
         self._extract_info_from_urls()
-        return self._listings
 
     def _extract_info_from_urls(self):
         threads = [Thread(target=self._scrape_url, args=(url,)) for url in self._urls]
@@ -28,7 +27,7 @@ class JumiaScraper(Scraper):
 
     def _scrape_url(self, url: str):
         listing = _UrlToListingConverter().convert(url)
-        self._listings.append(listing)
+        self._listings.push(listing)
 
 
 class _JumiaSearcher:

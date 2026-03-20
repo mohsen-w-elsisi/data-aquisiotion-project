@@ -1,3 +1,6 @@
+from os import environ
+
+from dotenv import load_dotenv
 from flask import Flask, request
 from composite_scraper import CompositeScraper
 import cache
@@ -20,6 +23,7 @@ def search():
 
 
 def _search(product_name: str) -> dict:
+    should_use_cache = bool(int(environ["ENABLE_CACHE"]))
     cached_search_results = cache.get_cached(product_name)
     if cached_search_results is not None:
         return cached_search_results
@@ -31,4 +35,5 @@ def _search(product_name: str) -> dict:
 
 
 if __name__ == "__main__":
+    print(load_dotenv())
     server.run()

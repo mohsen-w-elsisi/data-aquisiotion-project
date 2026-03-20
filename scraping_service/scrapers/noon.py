@@ -16,15 +16,14 @@ from .web_driver_management import WebDriverTask, WebDriverOrchestrater
 
 class NoonScraper(Scraper):
     def __init__(self) -> None:
+        super().__init__()
         self._product_name = ""
         self._listing_urls: list[str] = []
-        self._listings: list[Listing] = []
 
     def scrape(self, product_name: str):
         self._product_name = product_name
         self._get_listing_urls()
         self._scrape_urls()
-        return self._listings
 
     def _get_listing_urls(self):
         driver = webdriver.Chrome()
@@ -36,7 +35,7 @@ class NoonScraper(Scraper):
         tasks = [
             WebDriverTask(url, lambda drv: _ListingLinkScraper(drv).scrape())
             for url in self._listing_urls]
-        self._listings = WebDriverOrchestrater(tasks).start()
+        WebDriverOrchestrater(tasks, self._listings).start()
 
 
 class _NoonSearcher:

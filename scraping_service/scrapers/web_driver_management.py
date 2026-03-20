@@ -6,6 +6,8 @@ from typing import Callable, TypeVar, TypeAlias, Optional
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
 
+from scrapers.read_once_list import ReadOnceList
+
 _T = TypeVar("_T")
 
 
@@ -19,68 +21,44 @@ class WebDriverTask[_T]:
         return self._func(driver)
 
 
-NextTask: TypeAlias = Callable[[], Optional[WebDriverTask[_T]]]
+class _WebDriverTaskQueue[_T]:
+    def __init__(self, tasks: list[WebDriverTask[_T]]):
+        self._tasks = copy(tasks)
 
+    def next(self) -> Optional[WebDriverTask[_T]]:
+        if len(self._tasks) != 0:
+            return self._tasks.pop()
+        else:
+            return None
 
 class _WebDriverWorker[_T]:
-    def __init__(self, driver: WebDriver, next_task: NextTask[_T], push: Callable[[_T], None]):
+    def __init__(self, driver: WebDriver, queue: _WebDriverTaskQueue[_T], push: Callable[[_T], None]):
         self._driver = driver
-        self._next_task = next_task
+        self._queue = queue
         self._push = push
+        self._shouldTerminate = False
 
     def start(self):
-        while True:
-            task = self._next_task()
+        while not self._shouldTerminate:
+            task = self._queue.next()
             if task is None:
                 break
             result = task.execute(self._driver)
             self._push(result)
 
-
-class _WebDriverThreadController[_T]:
-    _TIME_INCREMENT_MS = 100
-
-    def __init__(self, driver: WebDriver, next_task: NextTask[_T], push: Callable[[_T], None], timeout: int):
-        self._driver = driver
-        self._next_task = next_task
-        self._push = push
-        self._timeout_ms = timeout * 1000
-        self._supervisor_thread = Thread(target=self._supervise)
-        self._worker_thread: Thread = Thread(target=self._work)
-        self._lifetime_ms = 0
-        self._should_terminate = False
-
-    def start(self):
-        self._supervisor_thread.start()
-        self._worker_thread.start()
-        while not self._should_terminate:
-            pass
-
-    def _work(self):
-        supervised_next_task = lambda: self._next_task() if not self._should_terminate else None
-        _WebDriverWorker(
-            self._driver,
-            supervised_next_task,
-            self._push
-        ).start()
-
-    def _supervise(self):
-        while not self._should_terminate:
-            sleep(self._TIME_INCREMENT_MS * 0.001)
-            self._lifetime_ms += self._TIME_INCREMENT_MS
-            if self._lifetime_ms >= self._timeout_ms:
-                self._should_terminate = True
-                print("should terminate now")
+    def terminate(self):
+        self._shouldTerminate = True
 
 
 class WebDriverOrchestrater[_T]:
     _WEB_DRIVER_COUNT = 3
 
-    def __init__(self, tasks: list[WebDriverTask[_T]]):
+    def __init__(self, tasks: list[WebDriverTask[_T]], listings: ReadOnceList[_T]):
         self._drivers: list[WebDriver] = []
+        self._listings = listings
         self._was_dismissed = False
-        self._results: list[_T] = []
-        self._tasks = copy(tasks)
+        self._queue = _WebDriverTaskQueue[_T](tasks)
+        self._workers: list[_WebDriverWorker[_T]] = []
         self._init_drivers()
 
     def _init_drivers(self):
@@ -88,29 +66,21 @@ class WebDriverOrchestrater[_T]:
             new_driver = webdriver.Chrome()
             self._drivers.append(new_driver)
 
-    def start(self) -> list[_T]:
-        thread_controllers = [
-            _WebDriverThreadController(driver, self._next_task, self._results.append, 15)
+    def start(self):
+        self._workers = [
+            _WebDriverWorker(driver, self._queue, self._listings.push)
             for driver in self._drivers]
         threads = [
-            Thread(target=controller.start)
-            for controller in thread_controllers]
+            Thread(target=worker.start)
+            for worker in self._workers]
         for thread in threads:
             thread.start()
-        for thread in threads:
-            thread.join()
-        return self._results
-
-    def _next_task(self):
-        try:
-            next_task = self._tasks.pop(0)
-            return next_task
-        except IndexError:
-            return None
 
     def dismiss(self):
         for driver in self._drivers:
             driver.close()
+        for worker in self._workers:
+            worker.terminate()
         self._was_dismissed = True
 
     def __del__(self):
