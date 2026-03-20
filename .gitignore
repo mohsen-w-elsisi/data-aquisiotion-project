@@ -3,3 +3,5 @@ __pycache__
 env.yaml
 cache.db
 .idea
+._mypy_cache
+.env

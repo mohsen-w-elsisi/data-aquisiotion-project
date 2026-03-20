@@ -22,6 +22,9 @@ class Scraper(ABC):
         scrapes the specified vendor and returns a list of relavant results
         """
 
+    def terminate(self):
+        pass
+
 
 class ScrapeException(Exception):
     """

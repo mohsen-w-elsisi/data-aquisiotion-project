@@ -3,7 +3,7 @@ from typing import Optional, Callable, TypeVar, Any
 from re import search
 
 from selenium import webdriver
-from selenium.common import StaleElementReferenceException, NoSuchElementException
+from selenium.common import StaleElementReferenceException, NoSuchElementException, NoSuchWindowException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -19,23 +19,39 @@ class NoonScraper(Scraper):
         super().__init__()
         self._product_name = ""
         self._listing_urls: list[str] = []
+        self._should_terminate = False
+        self._search_web_driver: WebDriver | None = None
+        self._web_driver_orchestrater: WebDriverOrchestrater[Listing] | None = None
+
+    def terminate(self):
+        self._should_terminate = True
+        if self._search_web_driver is not None:
+            self._search_web_driver.close()
+        if self._web_driver_orchestrater is not None:
+            self._web_driver_orchestrater.dismiss()
 
     def scrape(self, product_name: str):
         self._product_name = product_name
         self._get_listing_urls()
-        self._scrape_urls()
+        if not self._should_terminate:
+            self._scrape_urls()
 
     def _get_listing_urls(self):
-        driver = webdriver.Chrome()
-        self._listing_urls = _NoonSearcher(driver) \
-            .get_listing_urls(self._product_name)[:15]
-        driver.close()
+        try:
+            driver = webdriver.Chrome()
+            self._listing_urls = _NoonSearcher(driver) \
+                .get_listing_urls(self._product_name)[:15]
+            driver.close()
+        except NoSuchWindowException as e:
+            if not self._should_terminate:
+                raise e
 
     def _scrape_urls(self):
         tasks = [
             WebDriverTask(url, lambda drv: _ListingLinkScraper(drv).scrape())
             for url in self._listing_urls]
-        WebDriverOrchestrater(tasks, self._listings).start()
+        self._web_driver_orchestrater = WebDriverOrchestrater(tasks, self._listings)
+        self._web_driver_orchestrater.start()
 
 
 class _NoonSearcher:

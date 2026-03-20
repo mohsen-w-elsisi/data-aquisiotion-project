@@ -45,6 +45,9 @@ class CompositeScraper:
             sleep(self._SCRAPE_TIME_CHECK_INCREMENT / 1000)
             self._current_time += self._SCRAPE_TIME_CHECK_INCREMENT
 
+        for scraper in self._scrapers:
+            scraper.terminate()
+
         return self._listings.read()
 
     def _scrape_using_scraper(self, scraper: Scraper):

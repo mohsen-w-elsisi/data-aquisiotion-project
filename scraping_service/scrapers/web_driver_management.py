@@ -4,6 +4,7 @@ from time import sleep
 from typing import Callable, TypeVar, TypeAlias, Optional
 
 from selenium import webdriver
+from selenium.common import NoSuchWindowException
 from selenium.webdriver.remote.webdriver import WebDriver
 
 from scrapers.read_once_list import ReadOnceList
@@ -31,6 +32,7 @@ class _WebDriverTaskQueue[_T]:
         else:
             return None
 
+
 class _WebDriverWorker[_T]:
     def __init__(self, driver: WebDriver, queue: _WebDriverTaskQueue[_T], push: Callable[[_T], None]):
         self._driver = driver
@@ -43,8 +45,12 @@ class _WebDriverWorker[_T]:
             task = self._queue.next()
             if task is None:
                 break
-            result = task.execute(self._driver)
-            self._push(result)
+            try:
+                result = task.execute(self._driver)
+                self._push(result)
+            except NoSuchWindowException as e:
+                if not self._shouldTerminate:
+                    raise e
 
     def terminate(self):
         self._shouldTerminate = True
